@@ -30,19 +30,19 @@
 # define SHUT_RDWR 2
 # define close closesocket
 #else
-# include <sys/socket.h>
-# include <sys/ioctl.h>
+#include <net/socket.h>
+//# include <sys/ioctl.h>
 
 #if defined(__OpenBSD__) || (defined(__FreeBSD__) && __FreeBSD__ < 5)
 # define OS_BSD
 # include <netinet/in_systm.h>
 #endif
 
-# include <netinet/in.h>
-# include <netinet/ip.h>
-# include <netinet/tcp.h>
-# include <arpa/inet.h>
-# include <netdb.h>
+//# include <netinet/in.h>
+//# include <netinet/ip.h>
+//# include <netinet/tcp.h>
+//# include <arpa/inet.h>
+//# include <netdb.h>
 #endif
 
 #if !defined(MSG_NOSIGNAL)
@@ -57,6 +57,27 @@
 
 #include "modbus-tcp.h"
 #include "modbus-tcp-private.h"
+#define addrinfo zsock_addrinfo
+#define SHUT_RDWR ZSOCK_SHUT_RDWR
+#define MSG_DONTWAIT ZSOCK_MSG_DONTWAIT
+#define getaddrinfo	zsock_getaddrinfo
+#define freeaddrinfo	zsock_freeaddrinfo
+#define gai_strerror	zsock_gai_strerror
+#define getnameinfo	zsock_getnameinfo
+#define inet_ntop	zsock_inet_ntop
+#define inet_pton	zsock_inet_pton
+#define FD_ZERO		ZSOCK_FD_ZERO
+#define FD_ISSET	ZSOCK_FD_ISSET
+#define FD_CLR		ZSOCK_FD_CLR
+#define FD_SET		ZSOCK_FD_SET
+#define setsockopt	zsock_setsockopt
+#define recv	zsock_recv
+#define shutdown	zsock_shutdown
+#define send	zsock_send
+#define connect	zsock_connect
+#define socket	zsock_socket
+#define select	zsock_select
+#define getsockopt	zsock_getsockopt
 
 #ifdef OS_WIN32
 static int _modbus_tcp_init_win32(void)
@@ -241,18 +262,20 @@ static int _modbus_tcp_set_ipv4_options(int s)
 #endif
 #endif
 
+#if 0
 #ifndef OS_WIN32
     /**
      * Cygwin defines IPTOS_LOWDELAY but can't handle that flag so it's
      * necessary to workaround that problem.
      **/
     /* Set the IP low delay option */
-    option = IPTOS_LOWDELAY;
+    option = 0x10;
     rc = setsockopt(s, IPPROTO_IP, IP_TOS,
                     (const void *)&option, sizeof(int));
     if (rc == -1) {
         return -1;
     }
+#endif
 #endif
 
     return 0;
@@ -297,6 +320,25 @@ static int _connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen,
         }
     }
     return rc;
+}
+
+static inline unsigned int inet_addr(char *ip)
+{
+	struct in_addr addr;
+	char *tok;
+
+	tok = strtok(ip, ".");
+	addr.s4_addr[0] = atoi(tok);
+
+	tok = strtok(NULL, ".");
+	addr.s4_addr[1] = atoi(tok);
+	tok = strtok(NULL, ".");
+	addr.s4_addr[2] = atoi(tok);
+	tok = strtok(NULL, ".");
+	addr.s4_addr[3] = atoi(tok);
+
+	printf("IP is: %d %d %d %d\n", addr.s4_addr[0], addr.s4_addr[1], addr.s4_addr[2], addr.s4_addr[3]);
+	return addr.s_addr;
 }
 
 /* Establishes a modbus TCP connection with a Modbus server. */

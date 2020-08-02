@@ -18,8 +18,10 @@ typedef int ssize_t;
 #include <sys/types.h>
 #include <config.h>
 
+#include <net/socket_select.h>
 #include "modbus.h"
 
+#define fd_set zsock_fd_set
 MODBUS_BEGIN_DECLS
 
 /* It's not really the minimal length (the real one is report slave ID

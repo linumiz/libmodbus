@@ -18,7 +18,8 @@
 #if defined(_WIN32)
 #  include <winsock2.h>
 #else
-#  include <arpa/inet.h>
+//#  include <posix/arpa/inet.h>
+#include <net/socket.h>
 #endif
 
 #include <config.h>
@@ -26,7 +27,8 @@
 #include "modbus.h"
 
 #if defined(HAVE_BYTESWAP_H)
-#  include <byteswap.h>
+//#  include <byteswap.h>
+#include <sys/byteorder.h>
 #endif
 
 #if defined(__APPLE__)

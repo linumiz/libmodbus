@@ -22,6 +22,8 @@
 
 #include "modbus.h"
 #include "modbus-private.h"
+#define FD_ZERO		ZSOCK_FD_ZERO
+#define FD_SET		ZSOCK_FD_SET
 
 /* Internal use */
 #define MSG_LENGTH_UNDEFINED -1
