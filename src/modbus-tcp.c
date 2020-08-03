@@ -40,20 +40,13 @@
 # define SHUT_RDWR 2
 # define close closesocket
 #else
-# include <sys/socket.h>
-# include <sys/ioctl.h>
+# include <net/socket.h>
 
 #if defined(__OpenBSD__) || (defined(__FreeBSD__) && __FreeBSD__ < 5)
 # define OS_BSD
 # include <netinet/in_systm.h>
 #endif
 
-# include <netinet/in.h>
-# include <netinet/ip.h>
-# include <netinet/tcp.h>
-# include <arpa/inet.h>
-# include <poll.h>
-# include <netdb.h>
 #endif
 
 #if !defined(MSG_NOSIGNAL)
@@ -64,6 +57,23 @@
 
 #include "modbus-tcp.h"
 #include "modbus-tcp-private.h"
+#include <net/socket_select.h>
+
+#define addrinfo zsock_addrinfo
+#define SHUT_RDWR ZSOCK_SHUT_RDWR
+#define MSG_DONTWAIT ZSOCK_MSG_DONTWAIT
+#define FD_ZERO		ZSOCK_FD_ZERO
+#define send	zsock_send
+#define recv	zsock_recv
+#define shutdown	zsock_shutdown
+#define setsockopt	zsock_setsockopt
+#define select	zsock_select
+#define FD_SET		ZSOCK_FD_SET
+#define getaddrinfo	zsock_getaddrinfo
+#define connect	zsock_connect
+#define freeaddrinfo	zsock_freeaddrinfo
+#define socket	zsock_socket
+#define inet_pton	zsock_inet_pton
 
 #ifdef OS_WIN32
 static int _modbus_tcp_init_win32(void)
@@ -224,18 +234,20 @@ static int _modbus_tcp_set_ipv4_options(int s)
         return -1;
     }
 
+#if 0 /* FIXME real time optimization needed for modbus */
 #ifndef OS_WIN32
     /**
      * Cygwin defines IPTOS_LOWDELAY but can't handle that flag so it's
      * necessary to workaround that problem.
      **/
     /* Set the IP low delay option */
-    option = IPTOS_LOWDELAY;
+    option = 0x10;
     rc = setsockopt(s, IPPROTO_IP, IP_TOS,
                     (const void *)&option, sizeof(int));
     if (rc == -1) {
         return -1;
     }
+#endif
 #endif
 
     return 0;
@@ -266,15 +278,17 @@ static int _modbus_tcp_connect(modbus_t *ctx)
     }
 
     if (ctx->debug) {
-        printf("Connecting to %s\n", ctx_tcp->ip);
+        printk("Connecting to %s\n", ctx_tcp->ip);
     }
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(ctx_tcp->port);
-    addr.sin_addr.s_addr = inet_addr(ctx_tcp->ip);
+//    rc = inet_pton(AF_INET, ctx_tcp->ip, &addr.sin_addr);
+    rc = net_addr_pton(AF_INET, ctx_tcp->ip, &addr.sin_addr);
     rc = connect(ctx->s, (struct sockaddr *)&addr,
                  sizeof(struct sockaddr_in));
     if (rc == -1) {
+	printk("%s %d: %d\n", __func__, __LINE__, rc);
         close(ctx->s);
         return -1;
     }
@@ -538,7 +552,7 @@ int modbus_tcp_accept(modbus_t *ctx, int *socket)
     }
 
     if (ctx->debug) {
-        printf("The client connection from %s is accepted\n",
+        printk("The client connection from %s is accepted\n",
                inet_ntoa(addr.sin_addr));
     }
 
@@ -558,7 +572,7 @@ int modbus_tcp_pi_accept(modbus_t *ctx, int *socket)
     }
 
     if (ctx->debug) {
-        printf("The client connection is accepted.\n");
+        printk("The client connection is accepted.\n");
     }
 
     return ctx->s;

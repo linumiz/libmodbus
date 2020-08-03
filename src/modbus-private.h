@@ -30,10 +30,13 @@ typedef int ssize_t;
 #include <sys/types.h>
 #include <config.h>
 
+#include <net/socket_select.h>
+
 #include "modbus.h"
 
 MODBUS_BEGIN_DECLS
 
+#define fd_set	zsock_fd_set
 /* It's not really the minimal length (the real one is report slave ID
  * in RTU (4 bytes)) but it's a convenient size to use in RTU or TCP
  * communications to read many values or write a single one.
