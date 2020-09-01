@@ -74,6 +74,9 @@
 #define freeaddrinfo	zsock_freeaddrinfo
 #define socket	zsock_socket
 #define inet_pton	zsock_inet_pton
+#define bind	zsock_bind
+#define bind	zsock_listen
+#define bind	zsock_accept
 
 #ifdef OS_WIN32
 static int _modbus_tcp_init_win32(void)
@@ -376,7 +379,7 @@ int _modbus_tcp_flush(modbus_t *ctx)
 #else
         /* On Win32, it's a bit more complicated to not wait */
         fd_set rfds;
-        struct timeval tv;
+        struct zsock_timeval tv;
 
         tv.tv_sec = 0;
         tv.tv_usec = 0;
@@ -578,7 +581,7 @@ int modbus_tcp_pi_accept(modbus_t *ctx, int *socket)
     return ctx->s;
 }
 
-int _modbus_tcp_select(modbus_t *ctx, fd_set *rfds, struct timeval *tv, int length_to_read)
+int _modbus_tcp_select(modbus_t *ctx, fd_set *rfds, struct zsock_timeval *tv, int length_to_read)
 {
     int s_rc;
     while ((s_rc = select(ctx->s+1, rfds, NULL, NULL, tv)) == -1) {

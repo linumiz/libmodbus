@@ -100,7 +100,7 @@ typedef struct _modbus_backend {
     int (*connect) (modbus_t *ctx);
     void (*close) (modbus_t *ctx);
     int (*flush) (modbus_t *ctx);
-    int (*select) (modbus_t *ctx, fd_set *rfds, struct timeval *tv, int msg_length);
+    int (*select) (modbus_t *ctx, fd_set *rfds, struct zsock_timeval *tv, int msg_length);
     int (*filter_request) (modbus_t *ctx, int slave);
 } modbus_backend_t;
 
@@ -111,8 +111,8 @@ struct _modbus {
     int s;
     int debug;
     int error_recovery;
-    struct timeval response_timeout;
-    struct timeval byte_timeout;
+    struct zsock_timeval response_timeout;
+    struct zsock_timeval byte_timeout;
     const modbus_backend_t *backend;
     void *backend_data;
 };

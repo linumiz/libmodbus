@@ -28,6 +28,7 @@
 #include <time.h>
 
 #include <config.h>
+#include <net/socket_select.h>
 
 #include "modbus.h"
 #include "modbus-private.h"
@@ -332,8 +333,8 @@ static int receive_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
 {
     int rc;
     fd_set rfds;
-    struct timeval tv;
-    struct timeval *p_tv;
+    struct zsock_timeval tv;
+    struct zsock_timeval *p_tv;
     int length_to_read;
     int msg_length = 0;
     _step_t step;
@@ -1490,23 +1491,23 @@ int modbus_get_socket(modbus_t *ctx)
 }
 
 /* Get the timeout interval used to wait for a response */
-void modbus_get_response_timeout(modbus_t *ctx, struct timeval *timeout)
+void modbus_get_response_timeout(modbus_t *ctx, struct zsock_timeval *timeout)
 {
     *timeout = ctx->response_timeout;
 }
 
-void modbus_set_response_timeout(modbus_t *ctx, const struct timeval *timeout)
+void modbus_set_response_timeout(modbus_t *ctx, const struct zsock_timeval *timeout)
 {
     ctx->response_timeout = *timeout;
 }
 
 /* Get the timeout interval between two consecutive bytes of a message */
-void modbus_get_byte_timeout(modbus_t *ctx, struct timeval *timeout)
+void modbus_get_byte_timeout(modbus_t *ctx, struct zsock_timeval *timeout)
 {
     *timeout = ctx->byte_timeout;
 }
 
-void modbus_set_byte_timeout(modbus_t *ctx, const struct timeval *timeout)
+void modbus_set_byte_timeout(modbus_t *ctx, const struct zsock_timeval *timeout)
 {
     ctx->byte_timeout = *timeout;
 }
