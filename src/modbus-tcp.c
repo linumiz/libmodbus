@@ -75,8 +75,8 @@
 #define socket	zsock_socket
 #define inet_pton	zsock_inet_pton
 #define bind	zsock_bind
-#define bind	zsock_listen
-#define bind	zsock_accept
+#define listen	zsock_listen
+#define accept	zsock_accept
 
 #ifdef OS_WIN32
 static int _modbus_tcp_init_win32(void)
@@ -543,6 +543,7 @@ int modbus_tcp_pi_listen(modbus_t *ctx, int nb_connection)
    appropriately. */
 int modbus_tcp_accept(modbus_t *ctx, int *socket)
 {
+    static char buf[NET_IPV6_ADDR_LEN];
     struct sockaddr_in addr;
     socklen_t addrlen;
 
@@ -555,8 +556,8 @@ int modbus_tcp_accept(modbus_t *ctx, int *socket)
     }
 
     if (ctx->debug) {
-        printk("The client connection from %s is accepted\n",
-               inet_ntoa(addr.sin_addr));
+        net_addr_ntop(AF_INET, &addr.sin_addr, buf, sizeof(buf));
+        printk("The client connection from %s is accepted\n", buf);
     }
 
     return ctx->s;

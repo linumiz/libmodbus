@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <time.h>
+#include <kernel.h>
 
 #include <config.h>
 #include <net/socket_select.h>
@@ -108,12 +109,11 @@ int _sleep_and_flush(modbus_t *ctx)
           (ctx->response_timeout.tv_usec / 1000));
 #else
     /* usleep source code */
-    struct timespec request, remaining;
+    struct timespec request;
     request.tv_sec = ctx->response_timeout.tv_sec;
     request.tv_nsec = ((long int)ctx->response_timeout.tv_usec % 1000000)
         * 1000;
-    while (nanosleep(&request, &remaining) == -1 && errno == EINTR)
-        request = remaining;
+    k_sleep(K_NSEC(request.tv_nsec));
 #endif
     return modbus_flush(ctx);
 }

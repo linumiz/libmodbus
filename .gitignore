@@ -8,7 +8,6 @@ Makefile.in
 aclocal.m4
 autom4te.cache/
 config.guess
-config.h
 config.h.in
 config.log
 config.status
@@ -21,7 +20,6 @@ ltmain.sh
 missing
 libmodbus.pc
 libmodbus.spec
-modbus-version.h
 .deps
 .libs
 *.la
