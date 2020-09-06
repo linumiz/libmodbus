@@ -25,6 +25,7 @@
 #include <unistd.h>
 #endif
 #include <assert.h>
+#include <sys/ring_buffer.h>
 
 #include "modbus-private.h"
 
@@ -263,6 +264,16 @@ ssize_t _modbus_rtu_send(modbus_t *ctx, const uint8_t *req, int req_length)
     modbus_rtu_t *ctx_rtu = ctx->backend_data;
     DWORD n_bytes = 0;
     return (WriteFile(ctx_rtu->w_ser.fd, req, req_length, &n_bytes, NULL)) ? n_bytes : -1;
+#elif defined(ZEPHYR_RTU)
+    int i;
+    modbus_rtu_t *ctx_rtu = ctx->backend_data;
+
+    for (i = 0; i < req_length; i++) {
+        uart_poll_out(ctx_rtu->zrtu, req[i]);
+    }
+
+    uart_irq_rx_enable(ctx_rtu->zrtu);
+    return i;
 #else
     return write(ctx->s, req, req_length);
 #endif
@@ -272,6 +283,10 @@ ssize_t _modbus_rtu_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length)
 {
 #if defined(_WIN32)
     return win32_ser_read(&((modbus_rtu_t *)ctx->backend_data)->w_ser, rsp, rsp_length);
+#elif defined(ZEPHYR_RTU)
+    modbus_rtu_t *ctx_rtu = ctx->backend_data;
+
+    return ring_buf_get(&ctx_rtu->rtu_ringbuf, rsp, rsp_length);
 #else
     return read(ctx->s, rsp, rsp_length);
 #endif
@@ -306,11 +321,35 @@ int _modbus_rtu_check_integrity(modbus_t *ctx, uint8_t *msg,
     }
 }
 
+static void modbus_rtu_fifo_callback(const struct device *dev, void *user_data)
+{
+    modbus_rtu_t *ctx_rtu = (modbus_rtu_t *)user_data;
+
+    if (!uart_irq_update(dev)) {
+        return;
+    }
+
+    if (uart_irq_rx_ready(dev)) {
+        int recv_len, rb_len;
+        uint8_t buffer[64];
+        size_t len = MIN(ring_buf_space_get(&ctx_rtu->rtu_ringbuf), sizeof(buffer));
+
+        recv_len = uart_fifo_read(dev, buffer, len);
+        rb_len = ring_buf_put(&ctx_rtu->rtu_ringbuf, buffer, recv_len);
+            if (rb_len < recv_len) {
+                ; /* FIXME report packet drop */
+            }
+    }
+}
+
 /* Sets up a serial port for RTU communications */
 static int _modbus_rtu_connect(modbus_t *ctx)
 {
 #if defined(_WIN32)
     DCB dcb;
+#elif defined(ZEPHYR_RTU)
+    int ret;
+    struct uart_config cfg;
 #else
     struct termios tios;
     speed_t speed;
@@ -459,6 +498,63 @@ static int _modbus_rtu_connect(modbus_t *ctx)
         ctx_rtu->w_ser.fd = INVALID_HANDLE_VALUE;
         return -1;
     }
+#elif defined(ZEPHYR_RTU)
+    ctx_rtu->zrtu = device_get_binding(ctx_rtu->device);
+    if (!ctx_rtu->zrtu) {
+        fprintf(stderr, "ERROR opening uart device\n");
+        return -1;
+    }
+
+    cfg.baudrate = ctx_rtu->baud;
+    switch (ctx_rtu->parity) {
+    case 'O':
+        cfg.parity = UART_CFG_PARITY_ODD;
+        break;
+    case 'E':
+        cfg.parity = UART_CFG_PARITY_EVEN;
+        break;
+    case 'N':
+    default:
+        cfg.parity = UART_CFG_PARITY_NONE;
+        break;
+    }
+
+    switch (ctx_rtu->stop_bit) {
+    case 2:
+        cfg.stop_bits = UART_CFG_STOP_BITS_2;
+        break;
+    default:
+    case 1:
+        cfg.stop_bits = UART_CFG_STOP_BITS_1;
+        break;
+    }
+
+    switch (ctx_rtu->data_bit) {
+    case 5:
+        cfg.data_bits = UART_CFG_DATA_BITS_5;
+        break;
+    case 6:
+        cfg.data_bits = UART_CFG_DATA_BITS_6;
+        break;
+    case 7:
+        cfg.data_bits = UART_CFG_DATA_BITS_7;
+        break;
+    case 8:
+    default:
+        cfg.data_bits = UART_CFG_DATA_BITS_8;
+        break;
+    }
+
+    cfg.flow_ctrl = UART_CFG_FLOW_CTRL_NONE;
+    ret = uart_configure(ctx_rtu->zrtu, &cfg);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ring_buf_init(&ctx_rtu->rtu_ringbuf, sizeof(ctx_rtu->rtu_ringbuf), ctx_rtu->rtu_buffer);
+    uart_irq_callback_user_data_set(ctx_rtu->zrtu, modbus_rtu_fifo_callback, (void *)ctx_rtu);
+    uart_irq_rx_enable(ctx_rtu->zrtu);
+
 #else
     /* The O_NOCTTY flag tells UNIX that this program doesn't want
        to be the "controlling terminal" for that port. If you
@@ -775,8 +871,6 @@ int modbus_rtu_get_serial_mode(modbus_t *ctx) {
 void _modbus_rtu_close(modbus_t *ctx)
 {
     /* Closes the file descriptor in RTU mode */
-    modbus_rtu_t *ctx_rtu = ctx->backend_data;
-
 #if defined(_WIN32)
     /* Revert settings */
     if (!SetCommState(ctx_rtu->w_ser.fd, &ctx_rtu->old_dcb))
@@ -786,6 +880,8 @@ void _modbus_rtu_close(modbus_t *ctx)
     if (!CloseHandle(ctx_rtu->w_ser.fd))
         fprintf(stderr, "ERROR Error while closing handle (LastError %d)\n",
                 (int)GetLastError());
+#elif defined(ZEPHYR_RTU)
+	/* TODO: not sure here */
 #else
     tcsetattr(ctx->s, TCSANOW, &(ctx_rtu->old_tios));
     close(ctx->s);
@@ -798,13 +894,19 @@ int _modbus_rtu_flush(modbus_t *ctx)
     modbus_rtu_t *ctx_rtu = ctx->backend_data;
     ctx_rtu->w_ser.n_bytes = 0;
     return (FlushFileBuffers(ctx_rtu->w_ser.fd) == FALSE);
+#elif defined(ZEPHYR_RTU)
+    modbus_rtu_t *ctx_rtu = ctx->backend_data;
+
+    memset(&ctx_rtu->rtu_buffer, '\0', sizeof(ctx_rtu->rtu_buffer));
+    ring_buf_reset(&ctx_rtu->rtu_ringbuf);
+    return 0;
 #else
     return tcflush(ctx->s, TCIOFLUSH);
 #endif
 }
 
 int _modbus_rtu_select(modbus_t *ctx, fd_set *rfds,
-                       struct timeval *tv, int length_to_read)
+                       struct zsock_timeval *tv, int length_to_read)
 {
     int s_rc;
 #if defined(_WIN32)
@@ -818,6 +920,21 @@ int _modbus_rtu_select(modbus_t *ctx, fd_set *rfds,
     if (s_rc < 0) {
         return -1;
     }
+#elif defined(ZEPHYR_RTU)
+    modbus_rtu_t *ctx_rtu = ctx->backend_data;
+    uint64_t end = z_timeout_end_calc(K_USEC(ctx->response_timeout.tv_usec));
+
+    do {
+        int64_t remaining = end - z_tick_get();
+        if (remaining <= 0) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+
+        k_msleep(1);
+    } while (ring_buf_is_empty(&ctx_rtu->rtu_ringbuf));
+
+    return 0;
 #else
     while ((s_rc = select(ctx->s+1, rfds, NULL, NULL, tv)) == -1) {
         if (errno == EINTR) {

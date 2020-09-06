@@ -28,7 +28,8 @@
 #if defined(_WIN32)
 #include <windows.h>
 #else
-#include <termios.h>
+#include <drivers/uart.h>
+#include <sys/ring_buffer.h>
 #endif
 
 #define _MODBUS_RTU_HEADER_LENGTH      1
@@ -52,6 +53,7 @@ struct win32_ser {
 };
 #endif /* _WIN32 */
 
+#define RING_BUF_SIZE	1024
 typedef struct _modbus_rtu {
     /* Device: "/dev/ttyS0", "/dev/ttyUSB0" or "/dev/tty.USA19*" on Mac OS X for
        KeySpan USB<->Serial adapters this string had to be made bigger on OS X
@@ -74,6 +76,10 @@ typedef struct _modbus_rtu {
 #if defined(_WIN32)
     struct win32_ser w_ser;
     DCB old_dcb;
+#elif defined(ZEPHYR_RTU)
+    const struct device *zrtu;
+    struct ring_buf rtu_ringbuf;
+    uint8_t rtu_buffer[RING_BUF_SIZE];
 #else
     /* Save old termios settings */
     struct termios old_tios;
