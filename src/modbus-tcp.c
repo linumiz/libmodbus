@@ -286,12 +286,10 @@ static int _modbus_tcp_connect(modbus_t *ctx)
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(ctx_tcp->port);
-//    rc = inet_pton(AF_INET, ctx_tcp->ip, &addr.sin_addr);
     rc = net_addr_pton(AF_INET, ctx_tcp->ip, &addr.sin_addr);
     rc = connect(ctx->s, (struct sockaddr *)&addr,
                  sizeof(struct sockaddr_in));
     if (rc == -1) {
-	printk("%s %d: %d\n", __func__, __LINE__, rc);
         close(ctx->s);
         return -1;
     }

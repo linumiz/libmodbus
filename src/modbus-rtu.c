@@ -922,11 +922,15 @@ int _modbus_rtu_select(modbus_t *ctx, fd_set *rfds,
     }
 #elif defined(ZEPHYR_RTU)
     modbus_rtu_t *ctx_rtu = ctx->backend_data;
-    uint64_t end = z_timeout_end_calc(K_USEC(ctx->response_timeout.tv_usec));
+    uint64_t end = 0;
+
+    if (tv) {
+        end = z_timeout_end_calc(K_USEC((1000000 * tv->tv_sec) + tv->tv_usec));
+    }
 
     do {
         int64_t remaining = end - z_tick_get();
-        if (remaining <= 0) {
+        if (end && remaining <= 0) {
             errno = ETIMEDOUT;
             return -1;
         }
