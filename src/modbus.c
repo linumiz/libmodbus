@@ -29,8 +29,6 @@
 #include <kernel.h>
 
 #include <config.h>
-#include <net/socket_select.h>
-
 #include "modbus.h"
 #include "modbus-private.h"
 #define FD_ZERO		ZSOCK_FD_ZERO
@@ -348,8 +346,10 @@ static int receive_msg(modbus_t *ctx, uint8_t *msg, msg_type_t msg_type)
     }
 
     /* Add a file descriptor to the set */
+#if !defined(ETH_W5500)
     FD_ZERO(&rfds);
     FD_SET(ctx->s, &rfds);
+#endif
 
     /* We need to analyse the message step by step.  At the first step, we want
      * to reach the function code because all packets contain this

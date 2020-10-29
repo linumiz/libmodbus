@@ -32,7 +32,9 @@
 #include <time.h>
 #endif
 
+#if !defined(ETH_W5500)
 #include <net/socket_select.h>
+#endif
 #include "modbus-version.h"
 
 #ifdef  __cplusplus

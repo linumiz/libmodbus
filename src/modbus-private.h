@@ -18,6 +18,7 @@
 
 #ifndef _MODBUS_PRIVATE_H_
 #define _MODBUS_PRIVATE_H_
+#define ETH_W5500	1
 
 #ifndef _MSC_VER
 # include <stdint.h>
@@ -31,12 +32,18 @@ typedef int ssize_t;
 #include <config.h>
 
 #include <net/socket_select.h>
+#if !defined(ETH_W5500)
+#include <net/socket_select.h>
+#endif
 
 #include "modbus.h"
 
 MODBUS_BEGIN_DECLS
 
 #define fd_set	zsock_fd_set
+#if !defined(ETH_W5500)
+#define fd_set	zsock_fd_set
+#endif
 /* It's not really the minimal length (the real one is report slave ID
  * in RTU (4 bytes)) but it's a convenient size to use in RTU or TCP
  * communications to read many values or write a single one.

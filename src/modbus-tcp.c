@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <zephyr.h>
+#define ETH_W5500	1
 #if defined(_WIN32)
 # define OS_WIN32
 /* ws2_32.dll has getaddrinfo and freeaddrinfo on Windows XP and later.
@@ -39,8 +41,12 @@
 # include <ws2tcpip.h>
 # define SHUT_RDWR 2
 # define close closesocket
+#elif defined(ETH_W5500)
+#include </home/parthiban/work/west/native/modules/lib/w5500/Ethernet/w5500_socket.h>
+#include </home/parthiban/work/west/native/modules/lib/w5500/Ethernet/W5500/w5500.h>
 #else
 # include <net/socket.h>
+#include <net/socket_select.h>
 
 #if defined(__OpenBSD__) || (defined(__FreeBSD__) && __FreeBSD__ < 5)
 # define OS_BSD
@@ -57,8 +63,8 @@
 
 #include "modbus-tcp.h"
 #include "modbus-tcp-private.h"
-#include <net/socket_select.h>
 
+#if !defined(ETH_W5500)
 #define addrinfo zsock_addrinfo
 #define SHUT_RDWR ZSOCK_SHUT_RDWR
 #define MSG_DONTWAIT ZSOCK_MSG_DONTWAIT
@@ -77,6 +83,7 @@
 #define bind	zsock_bind
 #define listen	zsock_listen
 #define accept	zsock_accept
+#endif
 
 #ifdef OS_WIN32
 static int _modbus_tcp_init_win32(void)
@@ -195,11 +202,19 @@ ssize_t _modbus_tcp_send(modbus_t *ctx, const uint8_t *req, int req_length)
        Requests not to send SIGPIPE on errors on stream oriented
        sockets when the other end breaks the connection.  The EPIPE
        error is still returned. */
+#if defined(ETH_W5500)
+    return send(ctx->s, (const char*)req, req_length);
+#else
     return send(ctx->s, (const char*)req, req_length, MSG_NOSIGNAL);
+#endif
 }
 
 ssize_t _modbus_tcp_recv(modbus_t *ctx, uint8_t *rsp, int rsp_length) {
+#if defined(ETH_W5500)
+    return recv(ctx->s, (char *)rsp, rsp_length);
+#else
     return recv(ctx->s, (char *)rsp, rsp_length, 0);
+#endif
 }
 
 int _modbus_tcp_check_integrity(modbus_t *ctx, uint8_t *msg, const int msg_length)
@@ -228,6 +243,10 @@ static int _modbus_tcp_set_ipv4_options(int s)
     int rc;
     int option;
 
+#if defined(ETH_W5500)
+    option = 0x10;
+    return setsockopt(s, SO_TOS, &option);
+#else
     /* Set the TCP no delay flag */
     /* SOL_TCP = IPPROTO_TCP */
     option = 1;
@@ -252,6 +271,7 @@ static int _modbus_tcp_set_ipv4_options(int s)
     }
 #endif
 #endif
+#endif
 
     return 0;
 }
@@ -260,7 +280,9 @@ static int _modbus_tcp_set_ipv4_options(int s)
 static int _modbus_tcp_connect(modbus_t *ctx)
 {
     int rc;
+#if !defined(ETH_W5500)
     struct sockaddr_in addr;
+#endif
     modbus_tcp_t *ctx_tcp = ctx->backend_data;
 
 #ifdef OS_WIN32
@@ -269,21 +291,45 @@ static int _modbus_tcp_connect(modbus_t *ctx)
     }
 #endif
 
+#if defined(ETH_W5500)
+    getSn_SR(0);
+    ctx->s = socket(0, Sn_MR_TCP, ctx_tcp->port, SF_TCP_NODELAY);
+    if (ctx->s < 0) {
+        return -1;
+    }
+#else
     ctx->s = socket(PF_INET, SOCK_STREAM, 0);
     if (ctx->s == -1) {
         return -1;
     }
+#endif
 
+#if 1
     rc = _modbus_tcp_set_ipv4_options(ctx->s);
     if (rc == -1) {
-        close(ctx->s);
+        w5500_close(ctx->s);
         return -1;
     }
+#endif
 
     if (ctx->debug) {
         printk("Connecting to %s\n", ctx_tcp->ip);
     }
 
+#if defined(ETH_W5500)
+	uint8_t destip[4];
+
+	destip[0] = 192;
+	destip[1] = 168;
+	destip[2] = 178;
+	destip[3] = 164;
+    rc = connect(ctx->s, destip, ctx_tcp->port);
+    if (rc != SOCK_OK) {
+	printk("Unable to connect: %d\n", rc);
+        w5500_close(ctx->s);
+        return -1;
+    }
+#else
     addr.sin_family = AF_INET;
     addr.sin_port = htons(ctx_tcp->port);
     rc = net_addr_pton(AF_INET, ctx_tcp->ip, &addr.sin_addr);
@@ -293,6 +339,7 @@ static int _modbus_tcp_connect(modbus_t *ctx)
         close(ctx->s);
         return -1;
     }
+#endif
 
     return 0;
 }
@@ -301,6 +348,7 @@ static int _modbus_tcp_connect(modbus_t *ctx)
 static int _modbus_tcp_pi_connect(modbus_t *ctx)
 {
     int rc;
+#if !defined(ETH_W5500)
     struct addrinfo *ai_list;
     struct addrinfo *ai_ptr;
     struct addrinfo ai_hints;
@@ -354,14 +402,17 @@ static int _modbus_tcp_pi_connect(modbus_t *ctx)
         return -1;
     }
 
+#endif
     return 0;
 }
 
 /* Closes the network connection and socket in TCP mode */
 void _modbus_tcp_close(modbus_t *ctx)
 {
+#if !defined(ETH_W5500)
     shutdown(ctx->s, SHUT_RDWR);
-    close(ctx->s);
+#endif
+    w5500_close(ctx->s);
 }
 
 int _modbus_tcp_flush(modbus_t *ctx)
@@ -373,7 +424,12 @@ int _modbus_tcp_flush(modbus_t *ctx)
         /* Extract the garbage from the socket */
         char devnull[MODBUS_TCP_MAX_ADU_LENGTH];
 #ifndef OS_WIN32
-        rc = recv(ctx->s, devnull, MODBUS_TCP_MAX_ADU_LENGTH, MSG_DONTWAIT);
+//        rc = recv(ctx->s, devnull, MODBUS_TCP_MAX_ADU_LENGTH, MSG_DONTWAIT);
+#elif defined(ETH_W5500)
+        int size;
+
+        size = getSn_RX_RSR(1);
+        rc = recv(ctx->s, devnull, size);
 #else
         /* On Win32, it's a bit more complicated to not wait */
         fd_set rfds;
@@ -406,7 +462,9 @@ int modbus_tcp_listen(modbus_t *ctx, int nb_connection)
 {
     int new_socket;
     int yes;
+#if !defined(ETH_W5500)
     struct sockaddr_in addr;
+#endif
     modbus_tcp_t *ctx_tcp = ctx->backend_data;
 
 #ifdef OS_WIN32
@@ -415,6 +473,9 @@ int modbus_tcp_listen(modbus_t *ctx, int nb_connection)
     }
 #endif
 
+#if defined(ETH_W5500)
+    return 0;
+#else
     new_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (new_socket == -1) {
         return -1;
@@ -443,10 +504,14 @@ int modbus_tcp_listen(modbus_t *ctx, int nb_connection)
     }
 
     return new_socket;
+#endif
 }
 
 int modbus_tcp_pi_listen(modbus_t *ctx, int nb_connection)
 {
+#if defined(ETH_W5500)
+    return 0;
+#else
     int rc;
     struct addrinfo *ai_list;
     struct addrinfo *ai_ptr;
@@ -534,6 +599,7 @@ int modbus_tcp_pi_listen(modbus_t *ctx, int nb_connection)
     }
 
     return new_socket;
+#endif
 }
 
 /* On success, the function return a non-negative integer that is a descriptor
@@ -541,10 +607,16 @@ int modbus_tcp_pi_listen(modbus_t *ctx, int nb_connection)
    appropriately. */
 int modbus_tcp_accept(modbus_t *ctx, int *socket)
 {
-    static char buf[NET_IPV6_ADDR_LEN];
+    static char buf[sizeof("xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx")];
+#if !defined(ETH_W5500)
     struct sockaddr_in addr;
     socklen_t addrlen;
+#endif
 
+#if defined(ETH_W5500)
+    /* TODO w5500 */
+    return 0;
+#else
     addrlen = sizeof(addr);
     ctx->s = accept(*socket, (struct sockaddr *)&addr, &addrlen);
     if (ctx->s == -1) {
@@ -559,10 +631,15 @@ int modbus_tcp_accept(modbus_t *ctx, int *socket)
     }
 
     return ctx->s;
+#endif
 }
 
 int modbus_tcp_pi_accept(modbus_t *ctx, int *socket)
 {
+#if defined(ETH_W5500)
+    /* TODO w5500 */
+    return 0;
+#else
     struct sockaddr_storage addr;
     socklen_t addrlen;
 
@@ -578,11 +655,20 @@ int modbus_tcp_pi_accept(modbus_t *ctx, int *socket)
     }
 
     return ctx->s;
+#endif
 }
 
 int _modbus_tcp_select(modbus_t *ctx, fd_set *rfds, struct zsock_timeval *tv, int length_to_read)
 {
+#if defined(ETH_W5500)
+    while (!(getSn_IR(ctx->s) & Sn_IR_RECV))
+        k_msleep(10);
+
+    setSn_IR(1, Sn_IR_RECV);
+    return 1;
+#else
     int s_rc;
+
     while ((s_rc = select(ctx->s+1, rfds, NULL, NULL, tv)) == -1) {
         if (errno == EINTR) {
             if (ctx->debug) {
@@ -602,6 +688,7 @@ int _modbus_tcp_select(modbus_t *ctx, fd_set *rfds, struct zsock_timeval *tv, in
     }
 
     return s_rc;
+#endif
 }
 
 int _modbus_tcp_filter_request(modbus_t *ctx, int slave)
